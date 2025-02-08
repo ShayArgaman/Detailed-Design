@@ -1,5 +1,4 @@
 # Detailed-Design
-
 # AWS Security Platform (CSPM) - Detailed Design Document
 
 ## 1. System Architecture
@@ -8,386 +7,324 @@
 
 ```mermaid
 graph TD
-    A[Web Interface] --> B[API Gateway]
-    B --> C[Authentication Service]
-    B --> D[Security Assessment Service]
-    B --> E[Log Analysis Service]
-    B --> F[Deployment Service]
-    C --> G[(DynamoDB)]
-    D --> H[(PostgreSQL)]
-    E --> I[AWS CloudWatch]
-    E --> J[AWS CloudTrail]
-    F --> K[AWS Systems Manager]
+    A[User Interface - React Frontend] --> B[FastAPI Backend Services]
+    B --> C[AWS Integration Layer]
+    C --> D[CloudTrail]
+    C --> E[CloudWatch]
+    C --> F[CloudMapper]
+    C --> G[Config]
+    C --> H[Systems Manager]
+    B --> I[Database Layer]
+    I --> J[(DynamoDB - Real-time Config)]
+    I --> K[(PostgreSQL - Historical Data)]
+    B --> L[INCD Integration Layer]
 ```
 
-### 1.2 Component Diagram
+### 1.2 Component Overview
 
-```mermaid
-graph LR
-    subgraph Frontend
-        A[React UI] --> B[Redux Store]
-        B --> C[API Client]
-    end
-    
-    subgraph Backend Services
-        D[FastAPI Server] --> E[Security Scanner]
-        D --> F[Log Collector]
-        D --> G[Deployment Manager]
-    end
-    
-    subgraph Databases
-        H[(DynamoDB)]
-        I[(PostgreSQL)]
-    end
-    
-    C --> D
-    E --> H
-    F --> I
-```
+#### Frontend Layer (React)
+- Security Dashboard
+- Interactive Visualizations
+- Alert Management Interface
+- Responsive Design Components
 
-## 2. Detailed Component Design
+#### Backend Services (Python/FastAPI)
+- REST API with JWT Authentication
+- RBAC Implementation
+- Security Scanning Service
+- Real-time Log Collection
+- Agent Management System
 
-### 2.1 Frontend Components
+#### AWS Integration Layer
+- CloudTrail Integration for Audit
+- CloudWatch for Monitoring
+- CloudMapper for Network Analysis
+- Config for Resource Tracking
+- Systems Manager for Deployment
 
-#### Dashboard Component
-```typescript
-interface DashboardProps {
-    securityScore: number;
-    recentAlerts: Alert[];
-    resourceCount: ResourceMetrics;
-    loading: boolean;
-}
+## 2. Core Functionality Design
 
-interface Alert {
-    id: string;
-    severity: 'high' | 'medium' | 'low';
-    message: string;
-    timestamp: Date;
-    resourceId: string;
-}
+### 2.1 IAM Role Mapping & Permission Analysis
 
-interface ResourceMetrics {
-    totalInstances: number;
-    activeInstances: number;
-    securityGroups: number;
-    iamRoles: number;
-}
-```
-
-#### Security Scanner Component
-```typescript
-interface ScannerProps {
-    onScanComplete: (results: ScanResults) => void;
-    scanStatus: ScanStatus;
-    lastScanTime: Date;
-}
-
-type ScanStatus = 'idle' | 'scanning' | 'complete' | 'error';
-
-interface ScanResults {
-    vulnerabilities: Vulnerability[];
-    misconfigurations: Misconfiguration[];
-    timestamp: Date;
-}
-```
-
-### 2.2 Backend Services
-
-#### Security Assessment Service
 ```python
-class SecurityAssessment:
-    def __init__(self, aws_credentials: AWSCredentials):
-        self.aws_client = AWSClient(aws_credentials)
-        self.scanner = SecurityScanner()
-        self.reporter = ReportGenerator()
-    
-    async def perform_assessment(self, config: ScanConfig) -> AssessmentResult:
-        raw_data = await self.aws_client.collect_resource_data()
-        scan_results = self.scanner.analyze_resources(raw_data)
-        return self.reporter.generate_report(scan_results)
-
-class SecurityScanner:
-    def analyze_resources(self, data: ResourceData) -> ScanResults:
-        # Implementation details
+class IAMAnalyzer:
+    def __init__(self, aws_session):
+        self.iam_client = aws_session.client('iam')
+        self.analyzer = RoleAnalyzer()
+        
+    async def analyze_permissions(self):
+        roles = await self.get_all_roles()
+        return self.analyzer.identify_risks(roles)
+        
+    def identify_excessive_permissions(self, role_policies):
+        # Implementation for identifying over-privileged roles
         pass
 ```
 
-#### Log Analysis Service
+### 2.2 Cloud Instance Scanning
+
+```python
+class InstanceScanner:
+    def __init__(self, aws_session):
+        self.ec2_client = aws_session.client('ec2')
+        self.config_client = aws_session.client('config')
+        
+    async def scan_instances(self):
+        instances = await self.get_active_instances()
+        configurations = await self.get_instance_configs()
+        return self.analyze_security_posture(instances, configurations)
+```
+
+### 2.3 Log Collection & Analysis
+
 ```python
 class LogAnalyzer:
-    def __init__(self):
-        self.cloudwatch = CloudWatchClient()
-        self.cloudtrail = CloudTrailClient()
+    def __init__(self, aws_session):
+        self.cloudwatch = aws_session.client('cloudwatch')
+        self.cloudtrail = aws_session.client('cloudtrail')
         
-    async def collect_logs(self, timeframe: TimeFrame) -> LogCollection:
-        cloudwatch_logs = await self.cloudwatch.get_logs(timeframe)
-        cloudtrail_logs = await self.cloudtrail.get_logs(timeframe)
-        return self.merge_logs(cloudwatch_logs, cloudtrail_logs)
+    async def collect_security_logs(self, timeframe):
+        logs = await self.fetch_logs(timeframe)
+        return self.analyze_for_anomalies(logs)
 ```
 
 ## 3. Database Schema Design
 
-### 3.1 DynamoDB Schema
+### 3.1 DynamoDB Schema (Real-time Configuration)
 
 ```json
 {
-  "Users": {
-    "pk": "USER#<user_id>",
-    "sk": "METADATA#<timestamp>",
-    "email": "string",
-    "role": "string",
-    "permissions": "set<string>",
-    "lastLogin": "timestamp"
+  "SecurityConfig": {
+    "pk": "CONFIG#<resource_id>",
+    "sk": "STATUS#<timestamp>",
+    "resourceType": "string",
+    "currentStatus": "string",
+    "securityScore": "number",
+    "lastScan": "timestamp"
   },
-  "SecurityScans": {
-    "pk": "SCAN#<scan_id>",
-    "sk": "RESULT#<timestamp>",
-    "status": "string",
-    "findings": "list<map>",
-    "resourcesScanned": "number"
+  "ActiveAlerts": {
+    "pk": "ALERT#<alert_id>",
+    "sk": "RESOURCE#<resource_id>",
+    "severity": "string",
+    "detectionTime": "timestamp",
+    "status": "string"
   }
 }
 ```
 
-### 3.2 PostgreSQL Schema
+### 3.2 PostgreSQL Schema (Historical Data)
 
 ```sql
 CREATE TABLE security_events (
     id SERIAL PRIMARY KEY,
     event_time TIMESTAMP,
-    event_type VARCHAR(50),
-    severity VARCHAR(20),
     resource_id VARCHAR(100),
-    details JSONB
+    event_type VARCHAR(50),
+    severity LEVEL,
+    details JSONB,
+    resolution_status VARCHAR(20)
 );
 
-CREATE TABLE resource_inventory (
+CREATE TABLE compliance_history (
     id SERIAL PRIMARY KEY,
-    aws_resource_id VARCHAR(100),
-    resource_type VARCHAR(50),
-    creation_date TIMESTAMP,
-    last_modified TIMESTAMP,
-    configuration JSONB
+    resource_id VARCHAR(100),
+    check_timestamp TIMESTAMP,
+    compliance_status VARCHAR(20),
+    violations JSONB
 );
 ```
 
-## 4. API Specification
+## 4. Implementation Details
 
-### 4.1 REST API Endpoints
+### 4.1 Frontend Components
 
-#### Security Assessment API
+```typescript
+// Security Dashboard Component
+interface DashboardProps {
+    securityScore: number;
+    activeAlerts: Alert[];
+    resourceStats: ResourceMetrics;
+}
+
+// Resource Scanner Component
+interface ScannerProps {
+    onScanInitiate: () => Promise<void>;
+    scanStatus: ScanStatus;
+    results: ScanResults;
+}
+```
+
+### 4.2 API Endpoints
+
 ```yaml
 openapi: 3.0.0
 paths:
-  /api/v1/scans:
+  /api/v1/scan:
     post:
-      summary: Initiate a security scan
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                scanType:
-                  type: string
-                  enum: [full, quick, custom]
-      responses:
-        '202':
-          description: Scan initiated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  scanId:
-                    type: string
-                  estimatedDuration:
-                    type: integer
-```
-
-#### Log Management API
-```yaml
-  /api/v1/logs:
-    get:
-      summary: Retrieve security logs
+      summary: Initiate security scan
       parameters:
-        - name: startTime
+        - name: scanType
           in: query
           required: true
           schema:
             type: string
-            format: date-time
-        - name: endTime
+            enum: [full, quick, targeted]
+            
+  /api/v1/resources:
+    get:
+      summary: Get resource inventory
+      parameters:
+        - name: resourceType
           in: query
-          required: true
           schema:
             type: string
-            format: date-time
-      responses:
-        '200':
-          description: Logs retrieved successfully
 ```
 
-## 5. Design Patterns
+## 5. Security Features
 
-### 5.1 Observer Pattern
-Used for real-time updates of security events:
-
-```typescript
-interface SecurityEventObserver {
-    update(event: SecurityEvent): void;
-}
-
-class SecurityEventSubject {
-    private observers: SecurityEventObserver[] = [];
-    
-    attach(observer: SecurityEventObserver): void {
-        this.observers.push(observer);
-    }
-    
-    notify(event: SecurityEvent): void {
-        this.observers.forEach(observer => observer.update(event));
-    }
-}
-```
-
-### 5.2 Factory Pattern
-For creating different types of security scanners:
+### 5.1 Anomaly Detection System
 
 ```python
-class ScannerFactory:
-    @staticmethod
-    def create_scanner(scanner_type: str) -> BaseScanner:
-        if scanner_type == "vulnerability":
-            return VulnerabilityScanner()
-        elif scanner_type == "compliance":
-            return ComplianceScanner()
-        elif scanner_type == "iam":
-            return IAMScanner()
-        raise ValueError(f"Unknown scanner type: {scanner_type}")
+class AnomalyDetector:
+    def __init__(self):
+        self.ml_model = self.load_model()
+        
+    def analyze_logs(self, log_data):
+        patterns = self.extract_patterns(log_data)
+        return self.detect_anomalies(patterns)
+        
+    def detect_anomalies(self, patterns):
+        # Implementation of anomaly detection logic
+        pass
 ```
 
-## 6. Interface Design and Prototypes
+### 5.2 Rule-Based Security Engine
 
-### 6.1 Dashboard Layout
-```typescript
-const DashboardLayout = styled.div`
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 1rem;
-    padding: 1rem;
-    
-    @media (max-width: 768px) {
-        grid-template-columns: 1fr;
-    }
-`;
-
-const SecurityScoreCard = styled.div`
-    grid-column: span 4;
-    background: white;
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-`;
+```python
+class SecurityRuleEngine:
+    def __init__(self):
+        self.rules = self.load_security_rules()
+        
+    def evaluate_resource(self, resource_config):
+        violations = []
+        for rule in self.rules:
+            if not rule.check_compliance(resource_config):
+                violations.append(rule.get_violation_details())
+        return violations
 ```
 
-### 6.2 Component Hierarchy
-```
-App
-├── Navigation
-├── Dashboard
-│   ├── SecurityScore
-│   ├── AlertList
-│   └── ResourceOverview
-├── SecurityScanner
-│   ├── ScanControls
-│   └── ResultsViewer
-└── Settings
-    ├── UserManagement
-    └── AWSConfiguration
+## 6. INCD Integration
+
+### 6.1 Integration Architecture
+
+```mermaid
+graph TD
+    A[CSPM Platform] --> B[INCD Integration Layer]
+    B --> C[Data Transformation]
+    B --> D[Security Protocol Adapter]
+    B --> E[Compliance Checker]
+    C --> F[INCD Systems]
 ```
 
-## 7. Modular Decomposition
+### 6.2 Compliance Implementation
 
-### 7.1 Core Modules
-- Authentication Module
-- Security Assessment Module
-- Log Analysis Module
-- Deployment Module
-- Reporting Module
+```python
+class INCDCompliance:
+    def __init__(self):
+        self.requirements = self.load_incd_requirements()
+        
+    def validate_security_posture(self, system_state):
+        compliance_status = {}
+        for req in self.requirements:
+            status = req.check_compliance(system_state)
+            compliance_status[req.id] = status
+        return compliance_status
+```
 
-### 7.2 Module Interfaces
+## 7. Cost Optimization Features
 
-```typescript
-interface SecurityAssessmentModule {
-    startScan(config: ScanConfig): Promise<ScanJob>;
-    getScanStatus(jobId: string): Promise<ScanStatus>;
-    getScanResults(jobId: string): Promise<ScanResults>;
-}
+### 7.1 Resource Efficiency
 
-interface LogAnalysisModule {
-    startLogCollection(config: LogConfig): Promise<void>;
-    queryLogs(query: LogQuery): Promise<LogResults>;
-    exportLogs(format: ExportFormat): Promise<ExportJob>;
-}
+```python
+class ResourceOptimizer:
+    def analyze_usage_patterns(self, resource_metrics):
+        # Implementation for identifying cost-saving opportunities
+        pass
+        
+    def recommend_optimizations(self, usage_patterns):
+        return {
+            'unused_resources': self.find_unused_resources(),
+            'scaling_opportunities': self.identify_scaling_options(),
+            'cost_projections': self.calculate_savings()
+        }
 ```
 
 ## 8. Testing Strategy
 
-### 8.1 Unit Tests
+### 8.1 Security Testing
+
 ```python
-def test_security_scanner():
-    scanner = SecurityScanner()
-    mock_data = generate_mock_resource_data()
-    results = scanner.analyze_resources(mock_data)
-    assert results.vulnerability_count > 0
-    assert results.status == "completed"
+class SecurityTester:
+    async def test_security_controls(self):
+        await self.test_iam_controls()
+        await self.test_resource_security()
+        await self.test_log_collection()
+        
+    async def test_iam_controls(self):
+        # Implementation of IAM security testing
+        pass
 ```
 
-### 8.2 Integration Tests
+### 8.2 Integration Testing
+
 ```python
-async def test_end_to_end_scan():
-    client = TestClient(app)
-    response = client.post("/api/v1/scans", json={"scanType": "full"})
-    assert response.status_code == 202
-    scan_id = response.json()["scanId"]
-    
-    # Poll for completion
-    while True:
-        status = client.get(f"/api/v1/scans/{scan_id}/status")
-        if status.json()["status"] == "completed":
-            break
-        await asyncio.sleep(1)
+class IntegrationTester:
+    async def test_aws_integration(self):
+        # Test AWS service connections
+        pass
+        
+    async def test_incd_integration(self):
+        # Test INCD system integration
+        pass
 ```
 
 ## 9. Deployment Architecture
 
 ### 9.1 AWS Infrastructure
+
 ```yaml
 Resources:
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Name: CSPMApi
+      Description: API for CSPM Platform
       
-  LambdaFunction:
-    Type: AWS::Lambda::Function
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      Runtime: python3.9
-      Handler: index.handler
-      Code:
-        S3Bucket: !Ref DeploymentBucket
-        S3Key: lambda.zip
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
 ```
 
-### 9.2 Containerization
-```dockerfile
-FROM python:3.9-slim
+### 9.2 CI/CD Pipeline
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```yaml
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: python:3.9
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: pip install -r requirements.txt
+      - run:
+          name: Run Tests
+          command: pytest
 ```
